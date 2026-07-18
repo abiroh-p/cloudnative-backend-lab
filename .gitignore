@@ -1,0 +1,22 @@
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/terraform.tfvars
+terraform/.terraform.lock.hcl
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Env / secrets
+.env
+*.env.local
+
+# OS / editor
+.DS_Store
+.vscode/
+*.swp

@@ -1,0 +1,8 @@
+# Copy this file to terraform.tfvars and adjust values as needed.
+# terraform.tfvars is gitignored — it's where you'd put anything you don't
+# want committed (though nothing here is secret yet; that changes once
+# Key Vault enters the picture in Stage 2).
+
+project_name = "cloudbe"
+environment  = "dev"
+location     = "centralindia"

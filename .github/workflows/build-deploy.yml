@@ -1,0 +1,16 @@
+# Stage 5 (not yet active) — CI/CD pipeline
+#
+# Will build the app image, scan it, push to ACR, and apply Kubernetes
+# manifests / trigger a rollout. Left as a placeholder until app/ and k8s/
+# have real content to build and deploy.
+#
+# name: build-deploy
+# on:
+#   push:
+#     branches: [main]
+# jobs:
+#   build:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#       # ... build, scan, push, deploy steps go here in Stage 5
