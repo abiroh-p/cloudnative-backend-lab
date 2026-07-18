@@ -38,8 +38,62 @@ variable "public_subnet_address_prefix" {
   type        = list(string)
   default     = ["10.0.2.0/24"]
 }
+
 variable "node_vm_size" {
-  description = "VM size for AKS nodes. Student subscriptions restrict availability by region."
+  description = <<-EOT
+    VM size for AKS nodes. NOTE: not every VM size is available in every
+    region/subscription — student subscriptions in particular restrict this
+    list. If you hit a "VM size not allowed" error, run:
+      az vm list-skus --location <region> --size Standard_B2 --output table
+    to see what's actually available to you, and override this variable.
+  EOT
   type        = string
-  default     = "Standard_B2s_v2"
+  default     = "Standard_B2s_v2"   # burstable, 2 vCPU / 4GB — cheapest general-purpose option
+}
+
+variable "postgres_admin_username" {
+  description = "Admin username for the Postgres server. NOTE: Azure disallows certain reserved names (postgres, admin, root, azure_superuser, etc.)."
+  type        = string
+  default     = "pgadmin"
+}
+
+variable "postgres_sku_name" {
+  description = <<-EOT
+    Compute tier for the Postgres Flexible Server. B_Standard_B1ms is the
+    cheapest burstable tier — same "check what your subscription actually
+    allows" caveat as node_vm_size applies here too. If this gets rejected:
+      az postgres flexible-server list-skus --location <region> --output table
+  EOT
+  type        = string
+  default     = "B_Standard_B1ms"
+}
+
+variable "postgres_version" {
+  description = "Postgres major version"
+  type        = string
+  default     = "16"
+}
+
+variable "postgres_db_name" {
+  description = "Name of the application database (must match app's POSTGRES_DB setting)"
+  type        = string
+  default     = "appdb"
+}
+
+variable "postgres_allowed_ip_start" {
+  description = <<-EOT
+    TEMPORARY / LEARNING-ONLY: start of the IP range allowed to reach
+    Postgres over the public internet. Wide open (0.0.0.0) by default so
+    this works from a Codespace with a changing IP. See
+    docs/adr/0005-postgres-public-access-temporary.md for why this is NOT
+    how it should look in a real deployment, and what replaces it.
+  EOT
+  type        = string
+  default     = "0.0.0.0"
+}
+
+variable "postgres_allowed_ip_end" {
+  description = "End of the allowed IP range — paired with postgres_allowed_ip_start"
+  type        = string
+  default     = "255.255.255.255"
 }

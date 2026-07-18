@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     postgres_db: str = "appdb"
     postgres_host: str = "db"          # "db" matches the docker-compose service name
     postgres_port: int = 5432
+    postgres_sslmode: str = "prefer"   # WHY "prefer": tries SSL first, falls back to plain if
+                                        # unavailable. Local docker Postgres has no SSL configured,
+                                        # Azure Postgres REQUIRES it — "prefer" works correctly
+                                        # against both without needing a per-environment switch.
 
     # App
     environment: str = "local"
@@ -30,6 +34,7 @@ class Settings(BaseSettings):
         return (
             f"postgresql+psycopg2://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+            f"?sslmode={self.postgres_sslmode}"
         )
 
 

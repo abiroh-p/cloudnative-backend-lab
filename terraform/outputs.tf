@@ -19,3 +19,22 @@ output "get_credentials_command" {
 output "vnet_id" {
   value = azurerm_virtual_network.main.id
 }
+
+output "postgres_fqdn" {
+  description = "Fully qualified hostname of the Postgres server — use this as POSTGRES_HOST"
+  value       = azurerm_postgresql_flexible_server.main.fqdn
+}
+
+output "postgres_admin_username" {
+  value = var.postgres_admin_username
+}
+
+output "postgres_admin_password" {
+  description = "Retrieve with: terraform output -raw postgres_admin_password"
+  value       = random_password.postgres_admin.result
+  sensitive   = true
+}
+
+output "postgres_db_name" {
+  value = var.postgres_db_name
+}

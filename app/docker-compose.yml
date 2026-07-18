@@ -24,12 +24,20 @@ services:
   app:
     build: .
     environment:
-      POSTGRES_HOST: db
-      POSTGRES_USER: appuser
-      POSTGRES_PASSWORD: changeme
-      POSTGRES_DB: appdb
+      # WHY ${VAR:-default} syntax: lets you override any of these from a
+      # local, gitignored .env file (or exported shell vars) WITHOUT ever
+      # editing this committed file. Defaults here point at the local
+      # docker-compose "db" service; to point at Azure Postgres instead,
+      # create a .env file (see .env.example) with the real values —
+      # docker compose automatically loads it for this substitution.
+      POSTGRES_HOST: ${POSTGRES_HOST:-db}
+      POSTGRES_USER: ${POSTGRES_USER:-appuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-appdb}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_SSLMODE: ${POSTGRES_SSLMODE:-prefer}
       LOG_LEVEL: INFO
-      ENVIRONMENT: local
+      ENVIRONMENT: ${ENVIRONMENT:-local}
     ports:
       - "8000:8000"
     depends_on:

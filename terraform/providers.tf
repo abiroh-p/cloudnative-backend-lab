@@ -12,6 +12,10 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 3.100"   # "~>" means: allow patch/minor updates, not major
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
 
   # INDUSTRY STANDARD NOTE:
