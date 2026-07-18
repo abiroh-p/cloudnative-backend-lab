@@ -1,0 +1,42 @@
+# WHY docker-compose for local dev, separate from the AKS deployment:
+# You don't want every code change to require a full Terraform apply / AKS
+# rebuild cycle — that's slow and expensive. Compose gives a fast local
+# inner-loop (seconds to restart) while AKS (Stage 4) handles the real
+# deployment target. Same Docker image, two different run environments.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: changeme
+      POSTGRES_DB: appdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d appdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app:
+    build: .
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: changeme
+      POSTGRES_DB: appdb
+      LOG_LEVEL: INFO
+      ENVIRONMENT: local
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy   # don't start the app until Postgres can accept connections
+    volumes:
+      - ./src:/app/src   # live-reload-friendly: code changes reflect without rebuilding the image
+
+volumes:
+  pgdata:

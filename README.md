@@ -19,7 +19,7 @@ map.
 | Stage | Folder | Status | Covers |
 |---|---|---|---|
 | 0 — IaC foundation | `terraform/` | ✅ done | Resource Group, VNet, subnets, NSG, AKS skeleton |
-| 1 — Backend core | `app/` | ⬜ not started | FastAPI service, structured logging |
+| 1 — Backend core | `app/` | ✅ done | FastAPI service, structured logging |
 | 2 — Database + secrets | `app/`, `terraform/` | ⬜ not started | Postgres, Alembic, Key Vault, managed identity |
 | 3 — Networking layer | `nginx/`, `terraform/` | ⬜ not started | Nginx, TLS, public/private subnet split |
 | 4 — Kubernetes + networking | `k8s/` | ⬜ not started | Ingress, NetworkPolicy, RBAC, ACR scanning |
