@@ -1,7 +1,9 @@
 # ADR 0004: Use `create_all()` temporarily instead of Alembic migrations
 
 ## Status
-Accepted (temporary — see "Revisit" below)
+Superseded — as of Stage 2, `create_all()` has been removed from
+`main.py`. Schema changes now go exclusively through Alembic migrations,
+run automatically via `entrypoint.sh` before the app starts.
 
 ## Context
 Alembic is scaffolded (`app/migrations/`) but `main.py` currently calls

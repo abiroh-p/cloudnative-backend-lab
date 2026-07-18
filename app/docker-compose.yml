@@ -36,7 +36,8 @@ services:
       db:
         condition: service_healthy   # don't start the app until Postgres can accept connections
     volumes:
-      - ./src:/app/src   # live-reload-friendly: code changes reflect without rebuilding the image
+      - ./src:/app/src              # live-reload-friendly: code changes reflect without rebuilding the image
+      - ./migrations:/app/migrations   # so alembic-generated migration files persist to disk, not just inside the container
 
 volumes:
   pgdata:

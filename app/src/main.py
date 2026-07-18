@@ -11,7 +11,6 @@ import time
 
 from src.core.config import settings
 from src.core.logging import configure_logging
-from src.db.session import Base, engine
 from src.routers import items, health
 
 configure_logging(settings.log_level)
@@ -45,11 +44,9 @@ async def log_requests(request: Request, call_next):
 
 @app.on_event("startup")
 def on_startup():
-    # NOTE: creating tables directly like this is fine for local dev only.
-    # Once Alembic migrations are wired in (next step), this line gets
-    # removed — migrations become the ONLY way schema changes happen, so
-    # dev/staging/prod never drift from each other.
-    Base.metadata.create_all(bind=engine)
+    # Schema is now managed exclusively by Alembic migrations (run by
+    # entrypoint.sh before this app process even starts) — no create_all()
+    # here anymore. See docs/adr/0004-migrations-vs-create-all.md.
     logger.info("app_startup", extra={"environment": settings.environment})
 
 
