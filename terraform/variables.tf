@@ -97,3 +97,15 @@ variable "postgres_allowed_ip_end" {
   type        = string
   default     = "255.255.255.255"
 }
+
+variable "k8s_namespace" {
+  description = "Kubernetes namespace the app's ServiceAccount will live in (created for real in Stage 4 — this just pre-registers the trust relationship)"
+  type        = string
+  default     = "default"
+}
+
+variable "k8s_service_account_name" {
+  description = "Name of the Kubernetes ServiceAccount the app will use (created for real in Stage 4)"
+  type        = string
+  default     = "backend-app"
+}

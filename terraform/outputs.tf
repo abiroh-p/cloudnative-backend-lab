@@ -38,3 +38,17 @@ output "postgres_admin_password" {
 output "postgres_db_name" {
   value = var.postgres_db_name
 }
+
+output "key_vault_uri" {
+  description = "Use this as KEY_VAULT_URI in the app's config"
+  value       = azurerm_key_vault.main.vault_uri
+}
+
+output "key_vault_name" {
+  value = azurerm_key_vault.main.name
+}
+
+output "app_identity_client_id" {
+  description = "Used later (Stage 4) to annotate the Kubernetes ServiceAccount for Workload Identity"
+  value       = azurerm_user_assigned_identity.app.client_id
+}

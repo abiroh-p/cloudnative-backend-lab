@@ -36,6 +36,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-appdb}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
       POSTGRES_SSLMODE: ${POSTGRES_SSLMODE:-prefer}
+      KEY_VAULT_URI: ${KEY_VAULT_URI:-}
       LOG_LEVEL: INFO
       ENVIRONMENT: ${ENVIRONMENT:-local}
     ports:
@@ -46,6 +47,15 @@ services:
     volumes:
       - ./src:/app/src              # live-reload-friendly: code changes reflect without rebuilding the image
       - ./migrations:/app/migrations   # so alembic-generated migration files persist to disk, not just inside the container
+      # WHY this mount: DefaultAzureCredential's AzureCliCredential works
+      # by reading the SAME az-login session `az` itself uses. Your `az
+      # login` ran on the Codespace HOST, not inside this container — the
+      # container has its own separate filesystem. Mounting ~/.azure
+      # (read-only) lets the credential chain inside the container reuse
+      # your existing host login instead of needing its own separate one.
+      # This is a LOCAL DEV convenience only — in AKS (Stage 4), Workload
+      # Identity replaces this entirely, no mount needed there.
+      - ${HOME}/.azure:/root/.azure
 
 volumes:
   pgdata:

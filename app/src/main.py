@@ -9,12 +9,17 @@ import logging
 from fastapi import FastAPI, Request
 import time
 
-from src.core.config import settings
+from src.core.config import settings, resolve_secrets
 from src.core.logging import configure_logging
-from src.routers import items, health
 
 configure_logging(settings.log_level)
 logger = logging.getLogger(__name__)
+
+resolve_secrets()   # fetches real secrets from Key Vault (if configured) — must run
+                     # AFTER configure_logging() so its log output is visible, and
+                     # BEFORE anything that builds a DB connection using settings.postgres_password
+
+from src.routers import items, health
 
 app = FastAPI(title="cloudnative-backend-lab", version="0.1.0")
 

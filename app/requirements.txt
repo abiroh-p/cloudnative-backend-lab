@@ -5,3 +5,5 @@ psycopg2-binary==2.9.9
 pydantic==2.9.2
 pydantic-settings==2.5.2
 alembic==1.13.3
+azure-identity==1.19.0
+azure-keyvault-secrets==4.9.0

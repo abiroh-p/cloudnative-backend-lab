@@ -96,7 +96,14 @@ resource "azurerm_kubernetes_cluster" "main" {
     type = "SystemAssigned"   # AKS manages its own identity — sets you up for
                                # the managed-identity/Key Vault work in Stage 2
   }
-    oidc_issuer_enabled = true
+
+  # WHY set this explicitly: Azure defaults new AKS clusters to OIDC issuer
+  # enabled, but that default wasn't declared here originally. Terraform's
+  # plan then assumed "should be false" (unset) and tried to DISABLE it on
+  # update — which Azure rejects outright once it's on, since it can't be
+  # turned back off. Declaring it explicitly keeps Terraform's model of the
+  # world matching the real cluster, so no phantom "fix" gets attempted.
+  oidc_issuer_enabled = true
 
   network_profile {
     network_plugin = "azure"  # "azure" CNI gives pods real VNet IPs — the
@@ -135,8 +142,15 @@ resource "azurerm_kubernetes_cluster" "main" {
 #   terraform output -raw postgres_admin_password
 
 resource "random_password" "postgres_admin" {
-  length           = 24
-  special          = true
+  length  = 24
+  special = true
+  # WHY this specific set instead of the default special-char set:
+  # "#" caused a real bug — .env file parsers treat an unquoted "#" as the
+  # start of a comment, silently truncating everything after it. Also
+  # excluding characters that are risky when a secret crosses a shell or
+  # config-file boundary at all: $ ` ' " ; & | < > and whitespace. 24
+  # characters from this set is still a very strong password — dropping a
+  # few punctuation options costs negligible entropy.
   override_special = "!%*()-_=+"
 }
 
@@ -193,4 +207,113 @@ resource "azurerm_postgresql_flexible_server_firewall_rule" "allow_learning_acce
   server_id        = azurerm_postgresql_flexible_server.main.id
   start_ip_address = var.postgres_allowed_ip_start
   end_ip_address   = var.postgres_allowed_ip_end
+}
+
+# ============================================================
+# CURRENT USER/PRINCIPAL — needed to grant YOU Key Vault access too
+# ============================================================
+# WHY: "data" blocks read existing info rather than creating anything.
+# This one reads details about whoever is running `terraform apply` (you,
+# authenticated via `az login`) — used below to grant your own account
+# permission to read/write secrets, separate from the app's own identity.
+
+data "azurerm_client_config" "current" {}
+
+# ============================================================
+# RANDOM SUFFIX FOR KEY VAULT NAME
+# ============================================================
+# WHY: Key Vault names must be GLOBALLY unique across all of Azure (not
+# just your subscription) — "cloudbe-dev-kv" is almost certainly already
+# taken by someone else's vault. A random suffix avoids that collision.
+
+resource "random_string" "kv_suffix" {
+  length  = 4
+  special = false
+  upper   = false
+}
+
+# ============================================================
+# KEY VAULT
+# ============================================================
+resource "azurerm_key_vault" "main" {
+  name                = "${var.project_name}${var.environment}kv${random_string.kv_suffix.result}"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  tenant_id           = data.azurerm_client_config.current.tenant_id
+  sku_name            = "standard"
+
+  # WHY RBAC over "access policies": Azure RBAC is the current recommended
+  # model — permissions are granted the same way as every other Azure
+  # resource (role assignments), instead of Key Vault's older, separate
+  # access-policy system. Fewer concepts to learn, and it's what current
+  # Azure docs push you toward.
+  enable_rbac_authorization = true
+
+  purge_protection_enabled = false   # learning project — allows immediate
+                                      # full deletion instead of a mandatory
+                                      # 90-day soft-delete retention. A real
+                                      # production vault would enable this.
+}
+
+# ============================================================
+# USER-ASSIGNED MANAGED IDENTITY — for the APP specifically
+# ============================================================
+# WHY separate from AKS's own system-assigned identity (used earlier for
+# the cluster itself): that identity represents the CLUSTER's control
+# plane. This one represents your APPLICATION's workload — the thing that
+# should be allowed to read secrets. Keeping them separate follows least-
+# privilege: the cluster's own identity doesn't need Key Vault access.
+
+resource "azurerm_user_assigned_identity" "app" {
+  name                = "${var.project_name}-${var.environment}-app-identity"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+}
+
+# ============================================================
+# ROLE ASSIGNMENTS — who can do what on the vault
+# ============================================================
+
+resource "azurerm_role_assignment" "app_identity_secrets_user" {
+  scope                = azurerm_key_vault.main.id
+  role_definition_name = "Key Vault Secrets User"   # READ-only — the app only needs to fetch, never write
+  principal_id         = azurerm_user_assigned_identity.app.principal_id
+}
+
+resource "azurerm_role_assignment" "current_user_secrets_officer" {
+  scope                = azurerm_key_vault.main.id
+  role_definition_name = "Key Vault Secrets Officer"   # read+write — so YOU can manage secrets via az/terraform
+  principal_id         = data.azurerm_client_config.current.object_id
+}
+
+# ============================================================
+# FEDERATED IDENTITY CREDENTIAL — the actual trust relationship
+# ============================================================
+# WHY this is the core of Workload Identity: this resource tells Azure AD
+# "trust tokens issued by THIS cluster's OIDC issuer, for THIS specific
+# Kubernetes ServiceAccount, and let them exchange for a real token as
+# THIS managed identity." Nothing works without this exact trust binding.
+
+resource "azurerm_federated_identity_credential" "app_workload_identity" {
+  name                = "${var.project_name}-app-federated-credential"
+  resource_group_name = azurerm_resource_group.main.name
+  parent_id           = azurerm_user_assigned_identity.app.id
+  audience            = ["api://AzureADTokenExchange"]   # fixed value required by the workload identity spec
+  issuer              = azurerm_kubernetes_cluster.main.oidc_issuer_url
+  subject             = "system:serviceaccount:${var.k8s_namespace}:${var.k8s_service_account_name}"
+}
+
+# ============================================================
+# STORE THE POSTGRES PASSWORD AS A SECRET
+# ============================================================
+# WHY: this is the actual payoff — the value that used to live only in
+# your local .env file now lives in a real, access-controlled secret
+# store. Local .env can eventually be deleted entirely.
+
+resource "azurerm_key_vault_secret" "postgres_admin_password" {
+  name         = "postgres-admin-password"
+  value        = random_password.postgres_admin.result
+  key_vault_id = azurerm_key_vault.main.id
+
+  depends_on = [azurerm_role_assignment.current_user_secrets_officer]
 }
