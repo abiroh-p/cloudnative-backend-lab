@@ -1,0 +1,35 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: backend-app
+  namespace: default
+  annotations:
+    # WHY these annotations instead of a config file: ingress-nginx is
+    # configured through Kubernetes-native annotations rather than editing
+    # an nginx.conf directly (that file still exists inside the controller,
+    # but ingress-nginx generates it FOR you from these annotations — you
+    # rarely touch it by hand). This is the same rate-limiting POLICY as
+    # Stage 3's local nginx.conf, just expressed the Kubernetes way.
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "2"
+spec:
+  ingressClassName: nginx
+  tls:
+    # WHY no explicit "hosts:" list here: there's no real domain name
+    # pointing at this cluster yet (no DNS record — just a bare public IP).
+    # Without a matching host, ingress-nginx falls back to serving this as
+    # its DEFAULT certificate for any request that doesn't match a more
+    # specific host rule elsewhere. Same self-signed-cert, `-k` with curl,
+    # local-only trade-off as Stage 3 — see docs/adr/0012.
+    - secretName: backend-app-tls
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-app
+                port:
+                  number: 80

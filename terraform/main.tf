@@ -71,6 +71,44 @@ resource "azurerm_subnet_network_security_group_association" "aks" {
 }
 
 # ============================================================
+# ALLOW LOAD-BALANCED TRAFFIC THROUGH TO NODEPORTS
+# ============================================================
+# WHY this rule is REQUIRED: a Kubernetes Service of type LoadBalancer
+# (like the ingress-nginx controller's Service) works by Azure's Load
+# Balancer DNAT-ing incoming internet traffic to a NodePort on one of the
+# AKS nodes (visible via `kubectl get svc` — e.g. "443:31144/TCP"). That
+# forwarded packet still carries the ORIGINAL CLIENT'S source IP when it
+# reaches the node's network interface — Azure's Standard Load Balancer
+# preserves source IP, it does not masquerade traffic as coming from
+# "the load balancer" itself.
+#
+# The default NSG rule "AllowAzureLoadBalancerInBound" does NOT cover
+# this — it only recognizes Azure's own internal health-probe traffic.
+# Without an explicit rule here, this custom NSG's default
+# "DenyAllInBound" silently drops every real client request, which is
+# exactly what caused a connection timeout on both ports 80 and 443 the
+# first time the ingress controller was tested (see
+# docs/adr/0013-nsg-loadbalancer-nodeport-rule.md for the full story).
+#
+# This is specifically a consequence of attaching a CUSTOM NSG to the AKS
+# subnet — clusters that let AKS fully manage its own networking don't
+# need this rule added manually, since AKS's own managed NSG handles it
+# automatically.
+resource "azurerm_network_security_rule" "allow_loadbalancer_nodeports" {
+  name                        = "allow-loadbalancer-nodeports"
+  priority                    = 100
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_range      = "30000-32767"   # the default Kubernetes NodePort range
+  source_address_prefix       = "Internet"
+  destination_address_prefix  = "*"
+  resource_group_name         = azurerm_resource_group.main.name
+  network_security_group_name = azurerm_network_security_group.aks.name
+}
+
+# ============================================================
 # AKS CLUSTER (skeleton — deliberately minimal for now)
 # ============================================================
 # WHY: This is the compute layer your app will eventually run on. We're

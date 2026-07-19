@@ -1,0 +1,17 @@
+# DIAGNOSTIC ONLY — not part of the real deployment. Tests whether ANY
+# LoadBalancer Service works on this cluster, bypassing ingress-nginx
+# entirely, to isolate whether the connectivity issue is universal to the
+# platform/subscription or specific to the ingress-nginx configuration.
+# Delete this once the test is done: kubectl delete -f test-lb-diagnostic.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-app-lb-test
+  namespace: default
+spec:
+  type: LoadBalancer
+  selector:
+    app: backend-app
+  ports:
+    - port: 80
+      targetPort: 8000
