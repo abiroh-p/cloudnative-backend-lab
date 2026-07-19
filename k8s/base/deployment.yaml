@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-app
+  namespace: default
+  labels:
+    app: backend-app
+spec:
+  replicas: 2   # same idea as app1/app2 in docker-compose — Kubernetes
+                # manages these as identical, interchangeable Pods instead
+                # of two hand-named services.
+  selector:
+    matchLabels:
+      app: backend-app
+  template:
+    metadata:
+      labels:
+        app: backend-app
+        azure.workload.identity/use: "true"   # required for Workload Identity
+    spec:
+      serviceAccountName: backend-app
+      containers:
+        - name: backend-app
+          image: ${ACR_LOGIN_SERVER}/backend-app:v1
+          command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: backend-app-config
+
+          # WHY these reuse the SAME endpoints built back in Stage 1: this
+          # is the exact payoff flagged in health.py's original comment —
+          # "building it now, testing it locally, means Stage 4 is just
+          # pointing an existing, proven endpoint at a probe config."
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+
+          # WHY requests vs limits — two different jobs:
+          # "requests" is what Kubernetes GUARANTEES this pod and uses to
+          # decide which node has room to schedule it. "limits" is a HARD
+          # CAP — if the container tries to use more than this, it gets
+          # throttled (CPU) or killed and restarted (memory, via OOMKill).
+          # These numbers are reasonable starting guesses for a small
+          # FastAPI app, not values tuned against real measured load.
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"

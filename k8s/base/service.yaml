@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-app
+  namespace: default
+spec:
+  # WHY ClusterIP (internal-only), not LoadBalancer: this Service is meant
+  # to be reached by an Ingress controller (added next), not directly from
+  # the internet. Exposing it via LoadBalancer here would create a SECOND
+  # public IP + entry point, bypassing the TLS/rate-limiting layer entirely
+  # — same reasoning as why app1/app2 didn't publish host ports once nginx
+  # was introduced in Stage 3.
+  type: ClusterIP
+  selector:
+    app: backend-app
+  ports:
+    - port: 80
+      targetPort: 8000

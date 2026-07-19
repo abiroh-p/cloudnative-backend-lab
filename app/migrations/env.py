@@ -8,15 +8,26 @@ from sqlalchemy import engine_from_config, pool
 # Make src/ importable when Alembic runs from the app/ directory
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from src.core.config import settings
+from src.core.config import settings, resolve_secrets
 from src.db.session import Base
 from src.models import item  # noqa: F401 — import registers the model with Base.metadata
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+# WHY this call is REQUIRED here, not optional:
+# settings.postgres_password starts out as whatever placeholder/env-var
+# value was loaded — the REAL password only exists after this runs. Local
+# dev was silently getting away without it because a working password
+# often happened to already be sitting in .env from earlier testing. In
+# AKS there is no .env fallback at all — without this call, the migration
+# Job would try to connect with the "changeme" placeholder and fail
+# outright. This was a real gap, not a hypothetical one.
+resolve_secrets()
+
+config.set_main_option("sqlalchemy.url", settings.database_url)
 
 target_metadata = Base.metadata
 

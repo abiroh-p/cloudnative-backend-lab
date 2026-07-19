@@ -52,3 +52,12 @@ output "app_identity_client_id" {
   description = "Used later (Stage 4) to annotate the Kubernetes ServiceAccount for Workload Identity"
   value       = azurerm_user_assigned_identity.app.client_id
 }
+
+output "acr_login_server" {
+  description = "Use this to tag/push images, e.g. docker tag myimage <this>/myimage:v1"
+  value       = azurerm_container_registry.main.login_server
+}
+
+output "acr_name" {
+  value = azurerm_container_registry.main.name
+}

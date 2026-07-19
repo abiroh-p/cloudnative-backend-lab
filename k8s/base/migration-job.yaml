@@ -1,0 +1,29 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: backend-app-migrate
+  namespace: default
+spec:
+  # WHY backoffLimit: 2 — if the migration genuinely fails (bad SQL, DB
+  # unreachable), retrying endlessly wastes time; 2 retries covers
+  # transient issues (e.g. DB not quite ready yet) without masking a real
+  # failure for long.
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        # Required for Workload Identity token injection — see
+        # serviceaccount.yaml for the full explanation.
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: backend-app
+      restartPolicy: Never   # WHY Never, not the default: a failed migration
+                              # attempt should show up as a failed Job for
+                              # you to investigate, not silently retry forever.
+      containers:
+        - name: migrate
+          image: ${ACR_LOGIN_SERVER}/backend-app:v1
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: backend-app-config

@@ -105,6 +105,15 @@ resource "azurerm_kubernetes_cluster" "main" {
   # world matching the real cluster, so no phantom "fix" gets attempted.
   oidc_issuer_enabled = true
 
+  # WHY this is a SEPARATE flag from oidc_issuer_enabled above: the OIDC
+  # issuer is the identity-provider mechanism itself; this flag turns on
+  # AKS's own Workload Identity admission webhook, which is what actually
+  # watches for pods using an annotated ServiceAccount and injects the
+  # token exchange machinery into them. Both are required together — the
+  # federated credential trust relationship configured earlier does
+  # nothing on its own without this webhook running in the cluster.
+  workload_identity_enabled = true
+
   network_profile {
     network_plugin = "azure"  # "azure" CNI gives pods real VNet IPs — the
                                # more production-realistic option vs "kubenet",
@@ -316,4 +325,44 @@ resource "azurerm_key_vault_secret" "postgres_admin_password" {
   key_vault_id = azurerm_key_vault.main.id
 
   depends_on = [azurerm_role_assignment.current_user_secrets_officer]
+}
+
+# ============================================================
+# AZURE CONTAINER REGISTRY (ACR)
+# ============================================================
+# WHY: AKS can't pull an image that only exists in your local Docker
+# build — it needs a registry it can reach. ACR is Azure's managed
+# container registry, and (like everything else in this project) we
+# authenticate to it via a managed identity role assignment rather than a
+# username/password.
+
+resource "azurerm_container_registry" "main" {
+  name                = "${var.project_name}${var.environment}acr${random_string.kv_suffix.result}"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+  sku                 = "Basic"
+
+  # WHY false: admin_enabled would create a static username/password for
+  # the registry — exactly the kind of standing credential this project
+  # has avoided everywhere else. AKS pulls images using its own identity
+  # instead (role assignment below), so no registry password ever exists.
+  admin_enabled = false
+}
+
+# ============================================================
+# GRANT AKS PULL ACCESS — via the KUBELET identity, not the cluster identity
+# ============================================================
+# WHY kubelet_identity specifically: AKS actually has TWO separate
+# identities under the hood. The one set in the `identity {}` block earlier
+# (SystemAssigned) represents the CLUSTER'S CONTROL PLANE. A SEPARATE
+# identity — the "kubelet identity" — is what the actual NODES use to do
+# node-level operations like pulling container images. Granting ACR access
+# to the wrong identity is a common real-world mistake that silently fails
+# with confusing "ImagePullBackOff" errors — worth knowing this distinction
+# exists before you hit that error yourself.
+
+resource "azurerm_role_assignment" "aks_acr_pull" {
+  scope                = azurerm_container_registry.main.id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_kubernetes_cluster.main.kubelet_identity[0].object_id
 }
