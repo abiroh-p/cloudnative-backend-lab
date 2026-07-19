@@ -3,6 +3,41 @@
 # rebuild cycle — that's slow and expensive. Compose gives a fast local
 # inner-loop (seconds to restart) while AKS (Stage 4) handles the real
 # deployment target. Same Docker image, two different run environments.
+#
+# WHY migrations are now a SEPARATE service, not run by entrypoint.sh:
+# entrypoint.sh itself has warned about this since Stage 2 — with a single
+# app instance, every replica running "alembic upgrade head" on startup was
+# harmless. Now that there are TWO replicas (app1, app2) starting at
+# roughly the same time, both would race to alter the schema
+# simultaneously if migrations stayed in each one's startup path. The real
+# fix: run the migration exactly once, as its own step, and have every app
+# replica wait for it to finish successfully before starting.
+
+x-app-env: &app-env
+  # WHY a YAML anchor: this environment block is identical across
+  # migrate/app1/app2 — defining it once and reusing it (via `<<: *app-env`
+  # below) means a config change only has to happen in one place.
+  POSTGRES_HOST: ${POSTGRES_HOST:-db}
+  POSTGRES_USER: ${POSTGRES_USER:-appuser}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+  POSTGRES_DB: ${POSTGRES_DB:-appdb}
+  POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+  POSTGRES_SSLMODE: ${POSTGRES_SSLMODE:-prefer}
+  KEY_VAULT_URI: ${KEY_VAULT_URI:-}
+  LOG_LEVEL: INFO
+  ENVIRONMENT: ${ENVIRONMENT:-local}
+
+x-app-volumes: &app-volumes
+  - ./src:/app/src
+  - ./migrations:/app/migrations
+  # WHY this mount: DefaultAzureCredential's AzureCliCredential works by
+  # reading the SAME az-login session `az` itself uses. Your `az login`
+  # ran on the Codespace HOST, not inside these containers. Mounting
+  # ~/.azure lets the credential chain inside each container reuse your
+  # existing host login. Read-write (not :ro) because `az` writes small
+  # command log files on every invocation.
+  # LOCAL DEV convenience only — Workload Identity replaces this in AKS.
+  - ${HOME}/.azure:/root/.azure
 
 services:
   db:
@@ -21,41 +56,59 @@ services:
       timeout: 3s
       retries: 5
 
-  app:
+  # ============================================================
+  # ONE-OFF MIGRATION STEP
+  # ============================================================
+  migrate:
     build: .
-    environment:
-      # WHY ${VAR:-default} syntax: lets you override any of these from a
-      # local, gitignored .env file (or exported shell vars) WITHOUT ever
-      # editing this committed file. Defaults here point at the local
-      # docker-compose "db" service; to point at Azure Postgres instead,
-      # create a .env file (see .env.example) with the real values —
-      # docker compose automatically loads it for this substitution.
-      POSTGRES_HOST: ${POSTGRES_HOST:-db}
-      POSTGRES_USER: ${POSTGRES_USER:-appuser}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
-      POSTGRES_DB: ${POSTGRES_DB:-appdb}
-      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
-      POSTGRES_SSLMODE: ${POSTGRES_SSLMODE:-prefer}
-      KEY_VAULT_URI: ${KEY_VAULT_URI:-}
-      LOG_LEVEL: INFO
-      ENVIRONMENT: ${ENVIRONMENT:-local}
-    ports:
-      - "8000:8000"
+    environment: *app-env
+    volumes: *app-volumes
+    command: ["alembic", "upgrade", "head"]
     depends_on:
       db:
-        condition: service_healthy   # don't start the app until Postgres can accept connections
-    volumes:
-      - ./src:/app/src              # live-reload-friendly: code changes reflect without rebuilding the image
-      - ./migrations:/app/migrations   # so alembic-generated migration files persist to disk, not just inside the container
-      # WHY this mount: DefaultAzureCredential's AzureCliCredential works
-      # by reading the SAME az-login session `az` itself uses. Your `az
-      # login` ran on the Codespace HOST, not inside this container — the
-      # container has its own separate filesystem. Mounting ~/.azure
-      # (read-only) lets the credential chain inside the container reuse
-      # your existing host login instead of needing its own separate one.
-      # This is a LOCAL DEV convenience only — in AKS (Stage 4), Workload
-      # Identity replaces this entirely, no mount needed there.
-      - ${HOME}/.azure:/root/.azure
+        condition: service_healthy
+
+  # ============================================================
+  # APP REPLICAS — two identical instances, explicitly named
+  # ============================================================
+  # WHY explicit app1/app2 instead of `docker compose up --scale app=2`:
+  # scaling that way relies on Docker's internal DNS round-robin, which is
+  # less visible/debuggable for learning. Two named services means the
+  # nginx upstream block can list them explicitly (see nginx/nginx.conf) —
+  # you can SEE exactly which backends are in the load-balanced pool.
+
+  app1:
+    build: .
+    environment: *app-env
+    volumes: *app-volumes
+    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  app2:
+    build: .
+    environment: *app-env
+    volumes: *app-volumes
+    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # ============================================================
+  # NGINX — the only service exposed to the host now
+  # ============================================================
+  # WHY app1/app2 no longer publish a host port: with nginx as the single
+  # entry point, nothing should reach the app replicas directly, bypassing
+  # TLS termination and rate limiting. Only nginx's 80/443 are published.
+  nginx:
+    build: ../nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - app1
+      - app2
 
 volumes:
   pgdata:
