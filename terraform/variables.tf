@@ -80,22 +80,10 @@ variable "postgres_db_name" {
   default     = "appdb"
 }
 
-variable "postgres_allowed_ip_start" {
-  description = <<-EOT
-    TEMPORARY / LEARNING-ONLY: start of the IP range allowed to reach
-    Postgres over the public internet. Wide open (0.0.0.0) by default so
-    this works from a Codespace with a changing IP. See
-    docs/adr/0005-postgres-public-access-temporary.md for why this is NOT
-    how it should look in a real deployment, and what replaces it.
-  EOT
-  type        = string
-  default     = "0.0.0.0"
-}
-
-variable "postgres_allowed_ip_end" {
-  description = "End of the allowed IP range — paired with postgres_allowed_ip_start"
-  type        = string
-  default     = "255.255.255.255"
+variable "postgres_subnet_address_prefix" {
+  description = "CIDR block for the delegated subnet Postgres Flexible Server uses for private VNet integration"
+  type        = list(string)
+  default     = ["10.0.3.0/24"]
 }
 
 variable "k8s_namespace" {

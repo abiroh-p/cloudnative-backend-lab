@@ -1,7 +1,10 @@
 # ADR 0005: Public access + open firewall rule for Postgres (temporary)
 
 ## Status
-Accepted (temporary — see "Revisit" below)
+Superseded — as of the Stage 4 private-networking work, Postgres uses
+private VNet integration instead (delegated subnet + private DNS zone).
+Public access and the open firewall rule have been removed entirely. See
+the "Revisit" section below, which is now complete.
 
 ## Context
 Azure Database for PostgreSQL Flexible Server supports two connectivity

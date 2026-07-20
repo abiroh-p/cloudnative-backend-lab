@@ -50,6 +50,54 @@ resource "azurerm_subnet" "public" {
 }
 
 # ============================================================
+# DELEGATED SUBNET FOR POSTGRES — private VNet integration
+# ============================================================
+# WHY "delegated": Azure requires a subnet to be explicitly delegated to
+# a specific service before that service can inject its own resources
+# (like a Postgres Flexible Server) directly into your VNet with a
+# private, non-internet-routable address. The delegation is what tells
+# Azure "this subnet's IP space belongs to Postgres Flexible Server
+# instances, not general-purpose VMs/pods." This replaces the temporary
+# public-access approach from ADR 0005, now that the app runs inside the
+# VNet (via AKS) and no longer needs internet-routable access to reach it.
+resource "azurerm_subnet" "postgres" {
+  name                 = "${var.project_name}-postgres-subnet"
+  resource_group_name  = azurerm_resource_group.main.name
+  virtual_network_name = azurerm_virtual_network.main.name
+  address_prefixes     = var.postgres_subnet_address_prefix
+
+  delegation {
+    name = "postgres-flexible-server-delegation"
+    service_delegation {
+      name    = "Microsoft.DBforPostgreSQL/flexibleServers"
+      actions = ["Microsoft.Network/virtualNetworks/subnets/join/action"]
+    }
+  }
+}
+
+# ============================================================
+# PRIVATE DNS ZONE — lets VNet resources resolve the server's hostname
+# ============================================================
+# WHY this is needed: with public access disabled, the server's hostname
+# no longer resolves via normal public DNS. This private zone, linked to
+# the VNet below, is what lets anything INSIDE the VNet (your AKS pods)
+# resolve "<servername>.postgres.database.azure.com" to the server's
+# private IP. Anything OUTSIDE the VNet (like local docker-compose in a
+# Codespace) can no longer resolve or reach it at all — the trade-off
+# ADR 0005 flagged as deferred until the app ran inside AKS.
+resource "azurerm_private_dns_zone" "postgres" {
+  name                = "${var.project_name}.postgres.database.azure.com"
+  resource_group_name = azurerm_resource_group.main.name
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "postgres" {
+  name                  = "${var.project_name}-postgres-dns-link"
+  private_dns_zone_name = azurerm_private_dns_zone.postgres.name
+  virtual_network_id    = azurerm_virtual_network.main.id
+  resource_group_name   = azurerm_resource_group.main.name
+}
+
+# ============================================================
 # NETWORK SECURITY GROUP (NSG)
 # ============================================================
 # WHY: An NSG is a firewall attached to a subnet. By default Azure allows
@@ -221,10 +269,14 @@ resource "azurerm_postgresql_flexible_server" "main" {
   administrator_login    = var.postgres_admin_username
   administrator_password = random_password.postgres_admin.result
 
-  # See docs/adr/0005 — public access is a deliberate, temporary choice
-  # for this stage. Once the app runs inside AKS (same VNet) in Stage 4,
-  # this moves to private VNet integration instead.
-  public_network_access_enabled = true
+  # WHY private VNet integration now, after starting public in ADR 0005:
+  # the app now runs inside the VNet via AKS, so it no longer needs an
+  # internet-routable path to reach Postgres. Disabling public access
+  # entirely removes the attack surface a wide-open firewall rule
+  # represented — the server now has NO internet-facing endpoint at all.
+  public_network_access_enabled = false
+  delegated_subnet_id           = azurerm_subnet.postgres.id
+  private_dns_zone_id           = azurerm_private_dns_zone.postgres.id
 
   zone = "1"
 
@@ -232,6 +284,14 @@ resource "azurerm_postgresql_flexible_server" "main" {
     environment = var.environment
     project     = var.project_name
   }
+
+  # WHY this dependency is required, not just good practice: Azure's API
+  # rejects Postgres Flexible Server creation with private VNet
+  # integration if the DNS zone isn't already linked to the VNet at
+  # creation time — Terraform would otherwise sometimes try to create
+  # these in parallel, since it doesn't infer this ordering from the
+  # attributes alone.
+  depends_on = [azurerm_private_dns_zone_virtual_network_link.postgres]
 }
 
 resource "azurerm_postgresql_flexible_server_database" "app" {
@@ -239,21 +299,6 @@ resource "azurerm_postgresql_flexible_server_database" "app" {
   server_id = azurerm_postgresql_flexible_server.main.id
   collation = "en_US.utf8"
   charset   = "utf8"
-}
-
-# ============================================================
-# FIREWALL RULE
-# ============================================================
-# WHY this is wide open by default: see docs/adr/0005 — this is a
-# temporary, learning-stage trade-off, not a production pattern. A real
-# deployment either uses VNet integration (no public exposure at all) or a
-# tightly scoped firewall rule for known static IPs (e.g. a CI runner).
-
-resource "azurerm_postgresql_flexible_server_firewall_rule" "allow_learning_access" {
-  name             = "allow-learning-access"
-  server_id        = azurerm_postgresql_flexible_server.main.id
-  start_ip_address = var.postgres_allowed_ip_start
-  end_ip_address   = var.postgres_allowed_ip_end
 }
 
 # ============================================================
