@@ -43,6 +43,25 @@ ruling out a client-side or single-network cause.
   timeout. This is the most conclusive test run: it proves the issue is
   universal to any `LoadBalancer` Service on this cluster, not specific
   to ingress-nginx's Helm chart, annotations, or configuration.
+- **`externalTrafficPolicy: Cluster` specifically** — switched to
+  `Local` (a genuinely different code path: a dedicated per-node health
+  check port instead of the generic kube-proxy-based mechanism, plus one
+  fewer internal network hop). Same timeout result.
+
+## Full checklist of what was verified clean via Azure CLI
+Beyond the above, every one of these was individually inspected and
+confirmed correct or healthy, with no anomaly found:
+- Both NSG layers (subnet-level and VMSS-level), each with the correct
+  explicit allow rule
+- Node health and stability (confirmed Ready, stable across a node
+  replacement event)
+- Load Balancer rules and health probes (correct ports, correct protocol,
+  matching NodePorts)
+- Azure's own `Health Probe Status` and `Data Path Availability` metrics
+  (100% throughout)
+- The Load Balancer's outbound rule configuration
+- The Public IP resource itself (SKU, zones, DDoS settings, tags — all
+  standard, no anomalies)
 
 ## Conclusion
 This is very likely a subscription- or platform-level restriction on
@@ -67,7 +86,10 @@ Document this honestly rather than continue indefinite trial-and-error.
 The deployment itself (AKS, ACR, Postgres, Key Vault, Workload Identity,
 the Deployment/Service/migration Job) is fully proven working via
 `kubectl port-forward` — see Stage 4b. Only the public entry point via
-Ingress remains blocked.
+Ingress/LoadBalancer remains blocked, and it has been investigated as
+thoroughly as CLI-level tooling allows. Further debugging attempts are
+not planned unless new information becomes available (e.g., an Azure
+support response, or the issue resolving on its own over time).
 
 ## Next steps (not yet attempted)
 - Open an Azure support/community question with the specific symptom
