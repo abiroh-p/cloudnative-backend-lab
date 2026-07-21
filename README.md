@@ -22,7 +22,7 @@ map.
 | 1 — Backend core | `app/` | ✅ done | FastAPI service, structured logging |
 | 2 — Database + secrets | `app/`, `terraform/` | ✅ done | Postgres, Alembic, Key Vault, Managed Identity |
 | 3 — Networking layer | `nginx/`, `terraform/` | ✅ done | Nginx, TLS, load balancing, separated migrations |
-| 4 — Kubernetes + networking | `k8s/` | 🟡 mostly done | AKS deployment, Workload Identity, private Postgres — Ingress external connectivity blocked (ADR 0014), NetworkPolicy + Dockerfile cleanup outstanding |
+| 4 — Kubernetes + networking | `k8s/` | 🟡 mostly done | AKS deployment, Workload Identity, private Postgres, NetworkPolicy (verified enforcing) — Ingress external connectivity blocked (ADR 0014), Dockerfile cleanup outstanding |
 | 5 — Deployment strategies + CI/CD | `k8s/rollouts/`, `.github/workflows/` | ⬜ not started | Rolling, blue-green, canary; GitHub Actions pipeline |
 | 6 — Observability + cost | `observability/` | ⬜ not started | Prometheus/Grafana, OpenTelemetry, resource tagging |
 
