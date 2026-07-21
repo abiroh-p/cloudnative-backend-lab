@@ -205,6 +205,22 @@ resource "azurerm_kubernetes_cluster" "main" {
                                # more production-realistic option vs "kubenet",
                                # worth understanding the tradeoff between them
 
+    # WHY this is required for NetworkPolicy to do anything at all:
+    # creating a Kubernetes NetworkPolicy object doesn't enforce anything
+    # by itself — it only works if something is actually watching for and
+    # enforcing those rules. Azure CNI has no such engine by default.
+    # "azure" here enables Azure's own Network Policy Manager. The
+    # alternative, "calico", is the other common choice (more features,
+    # e.g. policies that span beyond a single cluster) — "azure" was
+    # chosen for simplicity, since this project's NetworkPolicy needs are
+    # basic pod-to-pod traffic restriction, not anything Calico's extra
+    # features would add value for.
+    #
+    # WHY this required recreating the whole cluster: AKS only supports
+    # setting network_policy at CLUSTER CREATION time — it cannot be
+    # toggled on an existing cluster. See docs/adr/0015.
+    network_policy = "azure"
+
     # WHY these are set explicitly:
     # With Azure CNI, Kubernetes Services get virtual IPs from a SEPARATE
     # address range than the VNet — they're not real network locations, just

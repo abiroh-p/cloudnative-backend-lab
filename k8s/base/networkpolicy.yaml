@@ -1,0 +1,80 @@
+# WHY a default-deny baseline first: NetworkPolicies in Kubernetes are
+# ADDITIVE — once ANY policy selects a pod, that pod's traffic is denied
+# by default except what's explicitly allowed. Without an explicit
+# default-deny, pods with no matching policy remain fully open. This
+# establishes "nothing is allowed unless explicitly listed" for the
+# default namespace, matching how a real production cluster is secured.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: default
+spec:
+  podSelector: {}   # selects ALL pods in the namespace
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# WHY backend-app needs its OWN explicit allow rules once the default-deny
+# above applies to it: this is the actual "only what's needed" policy —
+# ingress only from the ingress controller, egress only to what the app
+# genuinely talks to (DNS, Postgres, Key Vault/Azure AD over the internet).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-app-policy
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: backend-app
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    # WHY only from ingress-nginx: nothing else in the cluster has a
+    # legitimate reason to call backend-app directly. This is the
+    # Kubernetes-native version of the same principle as Stage 3's nginx
+    # being the only thing with a published host port — the app should
+    # only be reachable through its intended front door.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8000
+
+  egress:
+    # DNS — required for the app to resolve ANYTHING (Postgres hostname,
+    # Key Vault hostname, Azure AD endpoints). Without this rule, egress
+    # default-deny would break DNS resolution entirely, which is a common
+    # first mistake when writing NetworkPolicies from scratch.
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    # Postgres — private VNet-integrated server, TCP 5432. WHY no
+    # podSelector/namespaceSelector here: Postgres isn't a Kubernetes
+    # pod at all, it's an external Azure resource reached via the
+    # delegated subnet — NetworkPolicy's pod/namespace selectors don't
+    # apply to it. An empty "to: []" with only ports specified allows
+    # egress to ANY destination on this port; this is a real, acknowledged
+    # limitation — see docs/adr/0015 for why IP-based restriction (the
+    # more precise alternative) wasn't used here.
+    - ports:
+        - protocol: TCP
+          port: 5432
+
+    # HTTPS — required for Key Vault access (Workload Identity token
+    # exchange) and reaching Azure AD/IMDS-related endpoints. Same
+    # limitation as above: this allows HTTPS egress broadly rather than
+    # to Key Vault's specific IP range.
+    - ports:
+        - protocol: TCP
+          port: 443
